@@ -1,0 +1,13 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "name": "fluid_renderer",
+      "project": "CMakeLists.txt",
+      "projectTarget": "fluid_renderer.exe",
+      "currentDir": "${workspaceRoot}"
+    }
+  ]
+}
