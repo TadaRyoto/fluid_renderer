@@ -1,3 +1,0 @@
-C:/Users/tdno5/fluid_renderer/.claude/worktrees/cool-jemison-746fda/build/CMakeFiles/fluid_renderer.dir
-C:/Users/tdno5/fluid_renderer/.claude/worktrees/cool-jemison-746fda/build/CMakeFiles/edit_cache.dir
-C:/Users/tdno5/fluid_renderer/.claude/worktrees/cool-jemison-746fda/build/CMakeFiles/rebuild_cache.dir

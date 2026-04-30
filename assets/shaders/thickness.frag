@@ -6,8 +6,11 @@ void main() {
     float r2 = dot(coord, coord);
     if (r2 > 1.0) discard;
 
-    // Sphere half-thickness at this texel (1.0 at centre, 0.0 at edge).
-    // Accumulated additively across all particles to build a thickness map.
+    // Sphere half-thickness, accumulated additively across overlapping point
+    // sprites to build the screen-space thickness map. Output is intentionally
+    // tiny; the composite stage multiplies by `thicknessScale` (~1e10) to
+    // bring the value back into a useful range while keeping the R32F target
+    // from saturating under heavy overlap.
     float thickness = sqrt(1.0 - r2);
-    FragColor = thickness * 0.1;
+    FragColor = thickness * 1e-12;
 }
