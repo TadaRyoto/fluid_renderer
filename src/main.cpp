@@ -32,6 +32,7 @@ GLuint particleVAO, particleVBO;
 int particleCount = 0;
 
 GLuint depthProgram, thicknessProgram, debugProgram;
+GLuint smoothProgram, normalProgram, compositeProgram;
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
@@ -101,9 +102,18 @@ void setupShaders() {
 	const char* quadVS = quadSource.c_str();
 	std::string debugSource = readShaderSource((g_assetsDir + "shaders/debug.frag").c_str());
 	const char* debugFS = debugSource.c_str();
+	std::string smoothSource = readShaderSource((g_assetsDir + "shaders/smooth.frag").c_str());
+	const char* smoothFS = smoothSource.c_str();
+	std::string normalSource = readShaderSource((g_assetsDir + "shaders/normal.frag").c_str());
+	const char* normalFS = normalSource.c_str();
+	std::string compositeSource = readShaderSource((g_assetsDir + "shaders/composite.frag").c_str());
+	const char* compositeFS = compositeSource.c_str();
     depthProgram = createProgram(particleVS, depthFS);
     thicknessProgram = createProgram(particleVS, thicknessFS);
     debugProgram = createProgram(quadVS, debugFS);
+    smoothProgram = createProgram(quadVS, smoothFS);
+    normalProgram = createProgram(quadVS, normalFS);
+    compositeProgram = createProgram(quadVS, compositeFS);
 }
 
 void createFramebuffers(GLuint &FBO, GLuint &tex, GLenum internalFormat, GLenum format, GLenum attachment) {
@@ -261,13 +271,28 @@ void renderFluidPipeline() {
 
     glDisable(GL_BLEND);
 
-	// depthマップの平滑化 (ガウシアンブラーなど)
+	// depthマップの平滑化 (双方向セパラブル・バイラテラルフィルタ)
     bool horizontal = true, first_iteration = true;
-    constexpr int amount = 30; // 平滑化の反復回数 
+    constexpr int amount = 30; // 平滑化の反復回数
 
-	// TODO: 平滑化シェーダーの使用
+    glUseProgram(smoothProgram);
+    glUniform1i(glGetUniformLocation(smoothProgram, "srcTex"), 0);
+    glUniform2f(glGetUniformLocation(smoothProgram, "texelSize"),
+                1.0f / (float)SCR_WIDTH, 1.0f / (float)SCR_HEIGHT);
+    // 空間ガウシアン σ ~= 1/blurScale (スケールが大きいほど鋭いカーネル)
+    glUniform1f(glGetUniformLocation(smoothProgram, "blurScale"), 0.18f);
+    // 深度差の許容度。値が大きいほど隣接深度の差に敏感 (=エッジ保持が強い)
+    glUniform1f(glGetUniformLocation(smoothProgram, "blurDepthFalloff"), 250.0f);
+    glUniform1i(glGetUniformLocation(smoothProgram, "filterRadius"), 8);
+
     for (unsigned int i = 0; i < amount; i++) {
         glBindFramebuffer(GL_FRAMEBUFFER, smoothFBO[horizontal]);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        // 反復ごとに H/V を切り替え (セパラブルフィルタ)
+        glUniform2f(glGetUniformLocation(smoothProgram, "blurDir"),
+                    horizontal ? 1.0f : 0.0f,
+                    horizontal ? 0.0f : 1.0f);
 
         // 最初の反復では深度マップを、以降はPing-Pongテクスチャを読み込む
         glActiveTexture(GL_TEXTURE0);
@@ -278,14 +303,26 @@ void renderFluidPipeline() {
         if (first_iteration) first_iteration = false;
     }
 
-    // normalマップの生成
+    // 平滑化結果が入っているテクスチャ (ループ末尾の glBindFramebuffer 対象は smoothFBO[!horizontal])
+    GLuint smoothedDepthTex = smoothTex[!horizontal];
+
+    // 投影行列の逆 (法線再構築 / 最終合成で view 空間へ戻すために使用)
+    glm::mat4 invProjection = glm::inverse(projection);
+
+    // normalマップの生成 (平滑化された深度から view 空間法線を再構築)
     glBindFramebuffer(GL_FRAMEBUFFER, normalFBO);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-	// TODO: 法線計算シェーダーの使用
+    glUseProgram(normalProgram);
+    glUniform1i(glGetUniformLocation(normalProgram, "depthTex"), 0);
+    glUniform2f(glGetUniformLocation(normalProgram, "texelSize"),
+                1.0f / (float)SCR_WIDTH, 1.0f / (float)SCR_HEIGHT);
+    glUniformMatrix4fv(glGetUniformLocation(normalProgram, "invProjectionMatrix"),
+                       1, GL_FALSE, glm::value_ptr(invProjection));
+
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, smoothTex[!horizontal]); // 最後に書き込まれた平滑化深度テクスチャ
+    glBindTexture(GL_TEXTURE_2D, smoothedDepthTex);
     renderQuad();
 
     // 最終合成 (デフォルトフレームバッファへ画面出力)
@@ -293,11 +330,21 @@ void renderFluidPipeline() {
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	// TODO: 最終合成シェーダーの使用   
+    glUseProgram(compositeProgram);
+    glUniform1i(glGetUniformLocation(compositeProgram, "depthTex"), 0);
+    glUniform1i(glGetUniformLocation(compositeProgram, "normalTex"), 1);
+    glUniform1i(glGetUniformLocation(compositeProgram, "thicknessTex"), 2);
+    glUniformMatrix4fv(glGetUniformLocation(compositeProgram, "invProjectionMatrix"),
+                       1, GL_FALSE, glm::value_ptr(invProjection));
+    glUniform1f(glGetUniformLocation(compositeProgram, "thicknessScale"), 1.0e10f);
 
-    glUseProgram(debugProgram);
     glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, smoothedDepthTex);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, normalTex);
+    glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, thicknessTex);
+
     renderQuad();
 }
 
