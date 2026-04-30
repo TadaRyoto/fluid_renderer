@@ -368,3 +368,6 @@ out/
 
 # vcpkg manifest-mode installed packages
 vcpkg_installed/
+
+# claude
+.claude
