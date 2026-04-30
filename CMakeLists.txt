@@ -18,7 +18,7 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 
-add_executable(${PROJECT_NAME} src/main.cpp)
+add_executable(${PROJECT_NAME} src/main.cpp src/sph.cpp)
 
 # リンク設定
 target_link_libraries(${PROJECT_NAME} PRIVATE glfw glad::glad glm::glm)

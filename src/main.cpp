@@ -4,11 +4,14 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <chrono>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <vector>
 #include <windows.h>
+
+#include "sph.h"
 
 static std::string g_assetsDir;
 
@@ -30,6 +33,8 @@ GLuint normalFBO, normalTex;
 GLuint quadVAO, quadVBO;
 GLuint particleVAO, particleVBO;
 int particleCount = 0;
+
+static SPHSystem sph;
 
 GLuint depthProgram, thicknessProgram, debugProgram;
 
@@ -173,40 +178,68 @@ void setupQuad() {
 }
 
 void setupParticles() {
-    std::vector<float> particles;
+    // Init SPH: 10^3 = 1000 particles centred at (0, 0.5, -2)
+    constexpr int   gridSize = 10;
+    constexpr float spacing  = 0.08f;
+    const glm::vec3 center(0.0f, 0.5f, -2.0f);
+    sph.initGrid(gridSize, spacing, center);
+    particleCount = static_cast<int>(sph.count());
 
-    // ダミーパーティクルの配置パラメータ
-    int gridSize = 20;
-    float spacing = 0.1f;
-    float offset = (gridSize * spacing) / 2.0f;
-
-    // 立方体状にパーティクルの座標（X, Y, Z）を生成
-    for (int x = 0; x < gridSize; ++x) {
-        for (int y = 0; y < gridSize; ++y) {
-            for (int z = 0; z < gridSize; ++z) {
-                particles.push_back(x * spacing - offset);
-                particles.push_back(y * spacing - offset);
-                particles.push_back(z * spacing - offset - 2.0f); // Z方向に-2.0移動してカメラの奥に配置
-            }
-        }
-    }
-    particleCount = particles.size() / 3;
-
-    // VAOとVBOの生成とデータ転送
     glGenVertexArrays(1, &particleVAO);
     glGenBuffers(1, &particleVBO);
-
     glBindVertexArray(particleVAO);
     glBindBuffer(GL_ARRAY_BUFFER, particleVBO);
 
-    // GL_STATIC_DRAW で転送（のちのシミュレーション実装時に GL_DYNAMIC_DRAW 等に変更します）
-    glBufferData(GL_ARRAY_BUFFER, particles.size() * sizeof(float), particles.data(), GL_STATIC_DRAW);
+    // GL_DYNAMIC_DRAW hints that this buffer will be rewritten every frame.
+    glBufferData(GL_ARRAY_BUFFER,
+                 particleCount * static_cast<GLsizeiptr>(sizeof(glm::vec3)),
+                 nullptr,
+                 GL_DYNAMIC_DRAW);
 
-    // 頂点属性ポインタの設定（Location 0 に 3要素の座標データ）
+    // Location 0: vec3 position
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
     glBindVertexArray(0);
+
+    // Upload initial positions so the first frame renders correctly.
+    glBindBuffer(GL_ARRAY_BUFFER, particleVBO);
+    const auto& ptcls = sph.particles();
+    std::vector<glm::vec3> initPos(ptcls.size());
+    for (std::size_t i = 0; i < ptcls.size(); ++i)
+        initPos[i] = ptcls[i].position;
+    glBufferSubData(GL_ARRAY_BUFFER, 0,
+                    static_cast<GLsizeiptr>(initPos.size() * sizeof(glm::vec3)),
+                    initPos.data());
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+// Stream SPH positions into the VBO every frame.
+// GL_MAP_INVALIDATE_BUFFER_BIT orphans the old buffer so the GPU does not stall
+// waiting for a previous draw to finish (equivalent to the "buffer orphaning" trick
+// with glBufferData(NULL) + glBufferSubData, but in a single call).
+void updateParticleVBO() {
+    const auto& ptcls = sph.particles();
+    const GLsizeiptr bytes =
+        static_cast<GLsizeiptr>(ptcls.size() * sizeof(glm::vec3));
+
+    glBindBuffer(GL_ARRAY_BUFFER, particleVBO);
+
+    glm::vec3* dst = reinterpret_cast<glm::vec3*>(
+        glMapBufferRange(GL_ARRAY_BUFFER, 0, bytes,
+                         GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT));
+    if (dst) {
+        for (std::size_t i = 0; i < ptcls.size(); ++i)
+            dst[i] = ptcls[i].position;
+        glUnmapBuffer(GL_ARRAY_BUFFER);
+    } else {
+        // Fallback: glBufferSubData (allocates a temporary host buffer)
+        std::vector<glm::vec3> pos(ptcls.size());
+        for (std::size_t i = 0; i < ptcls.size(); ++i)
+            pos[i] = ptcls[i].position;
+        glBufferSubData(GL_ARRAY_BUFFER, 0, bytes, pos.data());
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 void renderQuad() {
@@ -219,7 +252,7 @@ void renderFluidPipeline() {
 	glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
 	glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -4.0f));
 
-	float pointRadius = 0.15f;
+	float pointRadius = 0.2f;
 
 	// depthマップの生成
     glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
@@ -336,9 +369,17 @@ int main() {
 	setupQuad();
 	setupParticles();
 
-	// レンダリングループ
+    // レンダリングループ
+    auto lastTime = std::chrono::high_resolution_clock::now();
     while (!glfwWindowShouldClose(window)) {
-		renderFluidPipeline();
+        const auto now = std::chrono::high_resolution_clock::now();
+        const float dt = std::chrono::duration<float>(now - lastTime).count();
+        lastTime = now;
+
+        sph.step(dt);
+        updateParticleVBO();
+        renderFluidPipeline();
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
