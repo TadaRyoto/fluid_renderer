@@ -9,14 +9,14 @@ uniform float screenHeight;
 out vec3 vViewPos;
 
 void main() {
-    // Transform vertex to view space.
+    // 頂点をビュー空間に変換
     vec4 viewPos = viewMatrix * vec4(inPosition, 1.0);
     vViewPos = viewPos.xyz;
 
-    // Distance from camera.
+    // カメラからの距離
     float dist = length(viewPos.xyz);
 
-    // Point size in pixels: project sphere radius onto screen.
+    // ポイントサイズ(ピクセル単位): 球の半径をスクリーンに投影
     gl_PointSize = pointRadius * (screenHeight / dist) * projectionMatrix[1][1];
     gl_Position = projectionMatrix * viewPos;
 }

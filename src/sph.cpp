@@ -38,8 +38,8 @@ SPHSystem::SPHSystem()
       // Low viscosity preserves kinetic energy so the splash keeps moving.
       viscosity_(0.3f),
       gravity_(0.0f, -9.8f, 0.0f),
-      // -0.7 retains 70% of normal velocity on wall hit (50% of KE) -> bouncier walls.
-      boundaryDamping_(-0.7f),
+      // -0.3 retains 30% of normal velocity on wall hit (9% of KE) -> less bouncy walls.
+      boundaryDamping_(-0.0f),
       substeps_(2) {
     h2_ = h_ * h_;
     constexpr float pi = glm::pi<float>();

@@ -188,7 +188,7 @@ void setupQuad() {
 }
 
 void setupParticles() {
-    // Init SPH: 10^3 = 1000 particles centred at (0, 0.5, -2)
+    // SPH初期化: 10^3 = 1000個のパーティクルを(0, 0.5, -2)を中心に配置
     constexpr int   gridSize = 10;
     constexpr float spacing  = 0.08f;
     const glm::vec3 center(0.0f, 0.5f, -2.0f);
@@ -200,18 +200,18 @@ void setupParticles() {
     glBindVertexArray(particleVAO);
     glBindBuffer(GL_ARRAY_BUFFER, particleVBO);
 
-    // GL_DYNAMIC_DRAW hints that this buffer will be rewritten every frame.
+    // GL_DYNAMIC_DRAWはこのバッファが毎フレーム更新されることをヒントとして与える
     glBufferData(GL_ARRAY_BUFFER,
                  particleCount * static_cast<GLsizeiptr>(sizeof(glm::vec3)),
                  nullptr,
                  GL_DYNAMIC_DRAW);
 
-    // Location 0: vec3 position
+    // ロケーション0: vec3 位置
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
     glBindVertexArray(0);
 
-    // Upload initial positions so the first frame renders correctly.
+    // 初期位置をアップロードして最初のフレームが正しくレンダリングされるようにする
     glBindBuffer(GL_ARRAY_BUFFER, particleVBO);
     const auto& ptcls = sph.particles();
     std::vector<glm::vec3> initPos(ptcls.size());
@@ -223,10 +223,9 @@ void setupParticles() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-// Stream SPH positions into the VBO every frame.
-// GL_MAP_INVALIDATE_BUFFER_BIT orphans the old buffer so the GPU does not stall
-// waiting for a previous draw to finish (equivalent to the "buffer orphaning" trick
-// with glBufferData(NULL) + glBufferSubData, but in a single call).
+// 毎フレームSPH位置をVBOにストリーミングする
+// GL_MAP_INVALIDATE_BUFFER_BITは古いバッファを孤立させるため、GPUは前回の描画完了を待機して停止しない
+// (glBufferData(NULL) + glBufferSubDataの"バッファ孤立化"トリックと同等だが、単一呼び出しで実現)
 void updateParticleVBO() {
     const auto& ptcls = sph.particles();
     const GLsizeiptr bytes =
@@ -242,7 +241,7 @@ void updateParticleVBO() {
             dst[i] = ptcls[i].position;
         glUnmapBuffer(GL_ARRAY_BUFFER);
     } else {
-        // Fallback: glBufferSubData (allocates a temporary host buffer)
+        // フォールバック: glBufferSubData (一時ホストバッファを割り当てる)
         std::vector<glm::vec3> pos(ptcls.size());
         for (std::size_t i = 0; i < ptcls.size(); ++i)
             pos[i] = ptcls[i].position;
@@ -262,7 +261,7 @@ void renderFluidPipeline() {
 	glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
 	glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -4.0f));
 
-	float pointRadius = 0.15f;
+	float pointRadius = 0.04f;
 
 	// depthマップの生成
     glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
@@ -322,7 +321,7 @@ void renderFluidPipeline() {
         glBindFramebuffer(GL_FRAMEBUFFER, smoothFBO[horizontal]);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // 反復ごとに H/V を切り替え (セパラブルフィルタ)
+        // 反復ごとにH/Vを切り替える (分離可能フィルタ)
         glUniform2f(glGetUniformLocation(smoothProgram, "blurDir"),
                     horizontal ? 1.0f : 0.0f,
                     horizontal ? 0.0f : 1.0f);
@@ -384,13 +383,13 @@ void renderFluidPipeline() {
 int main() {
     initAssetsDir();
 
-	// GLFWの初期化
+	// GLFWを初期化
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     
-    // ウィンドウの作成
+    // ウィンドウを作成
     GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "fluid renderer", NULL, NULL);
     if (window == NULL) {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -400,7 +399,7 @@ int main() {
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
-	// GLADの初期化
+	// GLADを初期化
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
@@ -408,15 +407,13 @@ int main() {
 
     glEnable(GL_PROGRAM_POINT_SIZE);
 
-	// シェーダのセットアップ
+	// 各種セットアップ
     setupShaders();
-
-	// FBO、Quad、パーティクルのセットアップ
 	setupFBOs();
 	setupQuad();
 	setupParticles();
 
-    // レンダリングループ
+    // レンダリングループを実行
     auto lastTime = std::chrono::high_resolution_clock::now();
     while (!glfwWindowShouldClose(window)) {
         const auto now = std::chrono::high_resolution_clock::now();
