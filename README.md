@@ -69,7 +69,7 @@ fluid_renderer/
 
 ## 必要環境
 
-- **Windows 10+** または **Linux** / **macOS** (モダンなC++コンパイラ対応)
+- **Windows 10+**
 - **CMake 3.8+**
 - **vcpkg** (自動インストールまたはCMakeで統合)
 - OpenGL 4.3 対応GPU
@@ -80,7 +80,7 @@ fluid_renderer/
 
 ```bash
 # リポジトリをクローン
-git clone <repository-url>
+git clone https://github.com/TadaRyoto/fluid_renderer.git
 cd fluid_renderer
 
 # ビルドディレクトリを作成・設定
@@ -90,21 +90,9 @@ cmake --preset default -B build
 cmake --build build --config Release
 ```
 
-### Linux / macOS
-
-```bash
-# vcpkgをインストール(未インストールの場合)
-git clone https://github.com/Microsoft/vcpkg.git
-./vcpkg/bootstrap-vcpkg.sh
-
-# 設定・ビルド
-cmake --preset default -B build
-cmake --build build --config Release
-```
-
 ## 実行方法
 
-ビルド後、実行ファイルは `build/Release/` (またはデバッグビルドの場合は `build/Debug/`) に配置されます。
+ビルド後、実行ファイルは `build` に配置されます。
 
 ```bash
 ./build/Release/fluid_renderer
@@ -132,14 +120,10 @@ cmake --build build --config Release
 
 ## 参考資料
 
-このプロジェクトは以下の学術論文とプレゼンテーションに基づいています:
-
 - **Simon Green**, "Screen Space Fluid Rendering" (GDC 2010)  
-  スクリーンスペース流体レンダリングの古典的な実装手法
 - **Matthias Müller, David Charypar, Markus Gross**, "Particle-Based Fluid Simulation for Interactive Applications" (SIGGRAPH 2003)  
-  CPU ベースの SPH ソルバーの定式化と実装
 - **Jonathan Cohen**, "Incompressible Fluid Simulation using Smoothed Particle Hydrodynamics"  
-  SPH カーネル関数と数値積分の詳細
+- **Doyub Kim**, "Fluid Engine Development"
 
 ## 改善・拡張予定
 
@@ -150,7 +134,3 @@ cmake --build build --config Release
 - [ ] パフォーマンスプロファイリングとパイプライン最適化
 - [ ] UI / パラメータ調整インターフェースの追加
 - [ ] シェーダーキャッシング機構の実装
-
-## ライセンス
-
-[ライセンス情報を記入してください]
