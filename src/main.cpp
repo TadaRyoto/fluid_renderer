@@ -192,7 +192,7 @@ void setupParticles() {
     constexpr int   gridSize = 10;
     constexpr float spacing  = 0.08f;
     const glm::vec3 center(0.0f, 0.5f, -2.0f);
-    sph.initGrid(gridSize, spacing, center);
+    sph.initGrid(gridSize, center);
     particleCount = static_cast<int>(sph.count());
 
     glGenVertexArrays(1, &particleVAO);
@@ -261,7 +261,7 @@ void renderFluidPipeline() {
 	glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
 	glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -4.0f));
 
-	float pointRadius = 0.04f;
+	float pointRadius = 0.09f;
 
 	// depthマップの生成
     glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);

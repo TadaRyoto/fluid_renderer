@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 namespace {
 
@@ -27,19 +28,19 @@ inline long long hashCell(const glm::ivec3& c) {
 
 SPHSystem::SPHSystem()
     : h_(0.13f),
+	  spacing_(0.08f),
       // 質量は初期の立方格子配置（spacing 0.08, h 0.13）がPoly6密度で
       // ほぼrestDensity_を生成するよう調整→初期圧力≒0、
       // 床で圧力が高まる前に重力がクラスターを引き下げられるようにする。
       mass_(0.32f),
       restDensity_(600.0f),
-      // 低いガス定数→柔らかく圧縮性のある流体。高いkではキューブが
-      // ゴムのように振る舞う（1バウンスで固定）。30では自由に変形できる。
-      gasConstant_(30.0f),
+      gasConstant_(2000.0f),
+      gasExponent_(3.0f),
       // 低粘性により運動エネルギーが保たれ、飛沫が動き続ける。
-      viscosity_(0.3f),
+      viscosity_(0.15f),
       gravity_(0.0f, -9.8f, 0.0f),
       // -0.3で壁衝突時の法線速度を30%保持（運動エネルギーの9%）→反発の少ない壁。
-      boundaryDamping_(-0.0f),
+      boundaryDamping_(-0.3f),
       substeps_(2) {
     h2_ = h_ * h_;
     constexpr float pi = glm::pi<float>();
@@ -48,19 +49,25 @@ SPHSystem::SPHSystem()
     viscLapCoef_   =  45.0f  / (pi * std::powf(h_, 6.0f));
 }
 
-void SPHSystem::initGrid(int gridSize, float spacing, const glm::vec3& center) {
+void SPHSystem::initGrid(int gridSize, const glm::vec3& center) {
     particles_.clear();
     particles_.reserve(static_cast<std::size_t>(gridSize) * gridSize * gridSize);
 
-    const float offset = (gridSize - 1) * spacing * 0.5f;
+    const float offset = (gridSize - 1) * spacing_ * 0.5f;
+
+    // 位置に小さな擾乱を加えて対称性を崩す。
+    std::mt19937 rng(1234u);
+    const float jitter = spacing_ * 0.05f;
+    std::uniform_real_distribution<float> dist(-jitter, jitter);
+
     for (int x = 0; x < gridSize; ++x) {
         for (int y = 0; y < gridSize; ++y) {
             for (int z = 0; z < gridSize; ++z) {
                 SPHParticle p{};
                 p.position = center + glm::vec3(
-                    x * spacing - offset,
-                    y * spacing - offset,
-                    z * spacing - offset);
+                    x * spacing_ - offset + dist(rng),
+                    y * spacing_ - offset + dist(rng),
+                    z * spacing_ - offset + dist(rng));
                 p.velocity = glm::vec3(0.0f);
                 p.force    = glm::vec3(0.0f);
                 p.density  = restDensity_;
@@ -75,9 +82,9 @@ void SPHSystem::initGrid(int gridSize, float spacing, const glm::vec3& center) {
     //   代わりに水たまりに広がれるようにする。
     // - yはキューブ下方に落下距離を確保し、
     //   上方向の飛沫用に小さなマージンを設ける。
-    const float lateralMargin = offset * 1.0f + spacing * 2.0f; // キューブ幅の約2倍
-    const float floorMargin   = spacing * 6.0f;                 // 約0.5mの落下空間
-    const float ceilingMargin = spacing * 2.0f;
+    const float lateralMargin = offset * 1.0f + spacing_ * 2.0f; // キューブ幅の約2倍
+    const float floorMargin   = spacing_ * 6.0f;                 // 約0.5mの落下空間
+    const float ceilingMargin = spacing_ * 2.0f;
     boundsMin = center + glm::vec3(-(offset + lateralMargin),
                                    -(offset + floorMargin),
                                    -(offset + lateralMargin));
@@ -116,7 +123,7 @@ void SPHSystem::computeDensityPressure() {
             }
         }
         particles_[i].density  = density;
-        particles_[i].pressure = std::max(gasConstant_ * (density - restDensity_), 0.0f);
+        particles_[i].pressure = std::max(gasConstant_ * (std::powf(density / restDensity_, gasExponent_) - 1.0f), 0.0f);
     }
 }
 
@@ -138,13 +145,13 @@ void SPHSystem::computeForces() {
                         if (dist > 0.0f && dist < h_) {
                             const glm::vec3 dir = r / dist;
                             const float gap = h_ - dist;
-                            // 圧力力：対称平均（p_i + p_j）/ 2
-                            fp += dir * (-mass_
-                                * (particles_[i].pressure + particles_[j].pressure)
-                                / (2.0f * particles_[j].density)
+                            // 圧力力
+                            fp += dir * (-mass_ * mass_
+                                * (particles_[i].pressure / (particles_[i].density * particles_[i].density)
+                                    + particles_[j].pressure / (particles_[j].density * particles_[j].density))
                                 * spikyGradCoef_ * gap * gap);
-                            // 粘性力：ラプラシアンカーネル
-                            fv += viscosity_ * mass_
+                            // 粘性力
+                            fv += viscosity_ * mass_ * mass_
                                 * (particles_[j].velocity - particles_[i].velocity)
                                 / particles_[j].density
                                 * viscLapCoef_ * gap;
@@ -153,7 +160,7 @@ void SPHSystem::computeForces() {
                 }
             }
         }
-        const glm::vec3 fg = gravity_ * particles_[i].density;
+        const glm::vec3 fg = gravity_ * mass_;
         particles_[i].force = fp + fv + fg;
     }
 }
@@ -161,7 +168,7 @@ void SPHSystem::computeForces() {
 void SPHSystem::integrate(float dt) {
     for (auto& p : particles_) {
         if (p.density <= 0.0f) continue;
-        const glm::vec3 a = p.force / p.density;
+        const glm::vec3 a = p.force / mass_;
         p.velocity += a * dt;
         p.position += p.velocity * dt;
     }
