@@ -15,7 +15,7 @@ inline glm::ivec3 cellOf(const glm::vec3& p, float h) {
     );
 }
 
-// Pack ivec3 cell index into a 64-bit key. Each axis fits +/-2^20.
+// ivec3セルインデックスを64ビットキーにパック。各軸は±2^20に収まる。
 inline long long hashCell(const glm::ivec3& c) {
     constexpr long long bias = 1LL << 20;
     return ((static_cast<long long>(c.x) + bias) & 0x1FFFFF)
@@ -27,18 +27,18 @@ inline long long hashCell(const glm::ivec3& c) {
 
 SPHSystem::SPHSystem()
     : h_(0.13f),
-      // mass is calibrated so the initial cubic packing (spacing 0.08, h 0.13)
-      // produces a Poly6 density of roughly restDensity_ -> initial pressure ~= 0,
-      // letting gravity pull the cluster down before pressure builds at the floor.
+      // 質量は初期の立方格子配置（spacing 0.08, h 0.13）がPoly6密度で
+      // ほぼrestDensity_を生成するよう調整→初期圧力≒0、
+      // 床で圧力が高まる前に重力がクラスターを引き下げられるようにする。
       mass_(0.32f),
       restDensity_(600.0f),
-      // Low gas constant -> soft, compressible fluid. With high k the cube
-      // behaves like rubber (one bounce then locked). 30 lets it deform freely.
+      // 低いガス定数→柔らかく圧縮性のある流体。高いkではキューブが
+      // ゴムのように振る舞う（1バウンスで固定）。30では自由に変形できる。
       gasConstant_(30.0f),
-      // Low viscosity preserves kinetic energy so the splash keeps moving.
+      // 低粘性により運動エネルギーが保たれ、飛沫が動き続ける。
       viscosity_(0.3f),
       gravity_(0.0f, -9.8f, 0.0f),
-      // -0.3 retains 30% of normal velocity on wall hit (9% of KE) -> less bouncy walls.
+      // -0.3で壁衝突時の法線速度を30%保持（運動エネルギーの9%）→反発の少ない壁。
       boundaryDamping_(-0.0f),
       substeps_(2) {
     h2_ = h_ * h_;
@@ -70,13 +70,13 @@ void SPHSystem::initGrid(int gridSize, float spacing, const glm::vec3& center) {
         }
     }
 
-    // Container AABB:
-    // - x/z are widened to roughly 2x the initial cube so the fluid can spread
-    //   into a puddle instead of being squeezed against the side walls.
-    // - y has extra room below the cube to give the fall some height, and a
-    //   small margin above for upward splashes.
-    const float lateralMargin = offset * 1.0f + spacing * 2.0f; // ~2x cube width
-    const float floorMargin   = spacing * 6.0f;                 // ~0.5m drop room
+    // 境界AABB：
+    // - x/zは初期キューブの約2倍に広げ、流体が側壁に押しつけられる
+    //   代わりに水たまりに広がれるようにする。
+    // - yはキューブ下方に落下距離を確保し、
+    //   上方向の飛沫用に小さなマージンを設ける。
+    const float lateralMargin = offset * 1.0f + spacing * 2.0f; // キューブ幅の約2倍
+    const float floorMargin   = spacing * 6.0f;                 // 約0.5mの落下空間
     const float ceilingMargin = spacing * 2.0f;
     boundsMin = center + glm::vec3(-(offset + lateralMargin),
                                    -(offset + floorMargin),
@@ -138,12 +138,12 @@ void SPHSystem::computeForces() {
                         if (dist > 0.0f && dist < h_) {
                             const glm::vec3 dir = r / dist;
                             const float gap = h_ - dist;
-                            // Pressure force: symmetric average (p_i + p_j) / 2
+                            // 圧力力：対称平均（p_i + p_j）/ 2
                             fp += dir * (-mass_
                                 * (particles_[i].pressure + particles_[j].pressure)
                                 / (2.0f * particles_[j].density)
                                 * spikyGradCoef_ * gap * gap);
-                            // Viscosity force: laplacian kernel
+                            // 粘性力：ラプラシアンカーネル
                             fv += viscosity_ * mass_
                                 * (particles_[j].velocity - particles_[i].velocity)
                                 / particles_[j].density
@@ -184,7 +184,7 @@ void SPHSystem::enforceBounds() {
 void SPHSystem::step(float dt) {
     if (particles_.empty() || dt <= 0.0f) return;
 
-    // Clamp dt to avoid explosion on large frame gaps.
+    // 大きなフレーム間隔での発散を防ぐためdtをクランプ。
     dt = std::min(dt, 1.0f / 30.0f);
     const float sub_dt = dt / static_cast<float>(substeps_);
 
