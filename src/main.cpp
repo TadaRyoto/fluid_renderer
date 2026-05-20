@@ -259,7 +259,10 @@ void renderQuad() {
 
 void renderFluidPipeline() {
 	glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-	glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -4.0f));
+	glm::mat4 view = glm::lookAt(
+		glm::vec3(1.0f, 1.5f, 2.0f),
+		glm::vec3(0.0f, 0.5f, -2.0f),
+		glm::vec3(0.0f, 1.0f, 0.0f));
 
 	float pointRadius = 0.09f;
 
@@ -362,12 +365,16 @@ void renderFluidPipeline() {
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    glm::mat3 invView = glm::mat3(glm::inverse(view));
+
     glUseProgram(compositeProgram);
     glUniform1i(glGetUniformLocation(compositeProgram, "depthTex"), 0);
     glUniform1i(glGetUniformLocation(compositeProgram, "normalTex"), 1);
     glUniform1i(glGetUniformLocation(compositeProgram, "thicknessTex"), 2);
     glUniformMatrix4fv(glGetUniformLocation(compositeProgram, "invProjectionMatrix"),
                        1, GL_FALSE, glm::value_ptr(invProjection));
+    glUniformMatrix3fv(glGetUniformLocation(compositeProgram, "invViewMatrix"),
+                       1, GL_FALSE, glm::value_ptr(invView));
     glUniform1f(glGetUniformLocation(compositeProgram, "thicknessScale"), 1.0e10f);
 
     glActiveTexture(GL_TEXTURE0);

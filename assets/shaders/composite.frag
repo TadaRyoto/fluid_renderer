@@ -9,10 +9,11 @@ uniform sampler2D depthTex;        // 平滑化された深度 (R32F、ウィン
 uniform sampler2D normalTex;       // ビュー空間法線 (RGB16F)
 uniform sampler2D thicknessTex;    // 累積厚さ (R32F)
 uniform mat4 invProjectionMatrix;  // 透視投影の逆行列
+uniform mat3 invViewMatrix;        // ビュー空間 -> ワールド空間の回転
 uniform float thicknessScale;      // 生の厚さを有用な範囲に変換
 
 // --- 調整可能なシェーディング定数 ------------------------------------------
-const vec3  LIGHT_DIR        = normalize(vec3(0.4, 0.7, 0.6)); // ビュー空間
+const vec3  LIGHT_DIR        = normalize(vec3(0.4, 0.7, 0.6)); // ワールド空間
 const vec3  FLUID_TINT       = vec3(0.02, 0.25, 0.65);
 const vec3  ABSORPTION_COEFF = vec3(4.0, 1.2, 0.15);           // 単位厚さあたりのR/G/B
 const float IOR              = 1.33;                           // 水
@@ -61,13 +62,13 @@ void main() {
 
     // ここに流体はない -> 背景を表示するだけ
     if (depth >= 1.0) {
-        FragColor = vec4(envSample(bgDir), 1.0);
+        FragColor = vec4(envSample(invViewMatrix * bgDir), 1.0);
         return;
     }
 
     vec3 N = texture(normalTex, TexCoord).xyz;
     if (dot(N, N) < 1e-6) {
-        FragColor = vec4(envSample(bgDir), 1.0);
+        FragColor = vec4(envSample(invViewMatrix * bgDir), 1.0);
         return;
     }
     N = normalize(N);
@@ -87,12 +88,12 @@ void main() {
     vec2 refractUV = TexCoord + N.xy * REFRACT_OFFSET * thickness;
     vec3 refractDir = refract(-V, N, 1.0 / IOR);
     if (dot(refractDir, refractDir) < 1e-6) refractDir = -V; // 全反射フォールバック
-    vec3 refractedEnv = envSample(refractDir);
+    vec3 refractedEnv = envSample(invViewMatrix * refractDir);
 
     // オフセットされたUVを使って、そのUVでの方向経由で環境をサンプリング —
     // これによりメソッドがテクスチャ駆動のままになる(実際の背景
     // シーンテクスチャに自然に拡張可能)
-    vec3 refractedScene = envSample(viewDirFromUV(refractUV));
+    vec3 refractedScene = envSample(invViewMatrix * viewDirFromUV(refractUV));
     vec3 refracted = mix(refractedEnv, refractedScene, 0.5);
 
     // ------------- Beer-Lambert吸収 -----------------------------------------
@@ -104,13 +105,14 @@ void main() {
 
     // ------------- 反射 + Fresnel ------------------------------------------
     vec3 reflectDir = reflect(-V, N);
-    vec3 reflected = envSample(reflectDir);
+    vec3 reflected = envSample(invViewMatrix * reflectDir);
 
     float NdotV = clamp(dot(N, V), 0.0, 1.0);
     float fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
 
     // ------------- 鏡面ハイライト (Blinn-Phong) ----------------------------
-    vec3 H = normalize(LIGHT_DIR + V);
+    vec3 lightDirView = normalize(transpose(invViewMatrix) * LIGHT_DIR);
+    vec3 H = normalize(lightDirView + V);
     float spec = pow(max(dot(N, H), 0.0), SHININESS);
 
     vec3 color = mix(transmission, reflected, fresnel) + spec * vec3(1.2);
